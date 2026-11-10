@@ -1,0 +1,5 @@
+# Off-origin, asymmetric coordinates deliberately catch recentering/scaling.
+v 1 2 3
+v 3 2 3
+v 1 5 3
+f 1 2 3

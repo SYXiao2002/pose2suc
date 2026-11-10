@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "object_id": "plug_type_a",
+  "normal_convention": "outward_surface",
+  "grasps": [
+    {
+      "grasp_id": "top_region_v1",
+      "priority": 1,
+      "status": "pending",
+      "notes": "契约示例；请在实际模型上重新拾取并实吸验证。",
+      "contact_region": {
+        "type": "disk",
+        "center_obj": [
+          0.012,
+          0.003,
+          0.045
+        ],
+        "normal_obj": [
+          0,
+          0,
+          2
+        ],
+        "normal_source": "manual_corrected",
+        "radius_m": 0.008,
+        "tangent_ref_obj": [
+          1,
+          0,
+          0
+        ]
+      },
+      "candidate_points": [
+        {
+          "point_obj": [
+            0.012,
+            0.003,
+            0.045
+          ],
+          "score": 0.9
+        }
+      ]
+    }
+  ]
+}

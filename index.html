@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111922" />
+    <meta
+      name="description"
+      content="在 OBJ 原始物体坐标系中标注吸盘接触区域、法向和候选点。纯前端，可离线使用。"
+    />
+    <title>Pose2Suc · 吸盘抓取标注</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./src/style.css" />
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="./" aria-label="Pose2Suc 首页">
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 32 32"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M16 3 28 10v13L16 30 4 23V10L16 3Z"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <ellipse
+            cx="16"
+            cy="18"
+            rx="7"
+            ry="4"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <path
+            d="M16 18V8m-3 3 3-3 3 3"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+        </svg>
+        <span>Pose2Suc<small>吸盘抓取标注工作台</small></span>
+      </a>
+      <div class="header-meta">
+        <span class="connection-dot"></span
+        ><span id="offline-status">本地运行</span
+        ><span class="version">V1.0</span>
+      </div>
+      <div class="header-actions">
+        <span id="dirty-state" class="save-state">尚未编辑</span>
+        <button id="import-json" class="button secondary">导入 JSON</button>
+        <button id="export-json" class="button primary">
+          <span aria-hidden="true">↓</span> 导出标注
+        </button>
+      </div>
+    </header>
+
+    <div id="draft-banner" class="draft-banner" hidden>
+      <span id="draft-message">发现本地草稿。</span>
+      <div>
+        <button id="restore-draft" class="text-button">恢复草稿</button
+        ><button id="discard-draft" class="text-button muted">忽略</button>
+      </div>
+    </div>
+
+    <div class="model-bar">
+      <div class="model-file">
+        <span class="file-symbol" aria-hidden="true">◇</span>
+        <div>
+          <span id="model-name">载入模型…</span
+          ><small id="model-stats">保持 OBJ 原始坐标</small>
+        </div>
+      </div>
+      <button id="open-obj" class="button compact">打开 OBJ</button>
+      <label class="demo-label"
+        ><span class="sr-only">示例模型</span
+        ><select id="demo-select">
+          <option value="plug">示例 · 欧规插头</option>
+          <option value="cube">示例 · 立方体</option>
+          <option value="custom" hidden>本地 OBJ</option>
+        </select></label
+      >
+      <div class="object-field">
+        <label for="object-id">OBJECT ID</label
+        ><input
+          id="object-id"
+          value="eu_plug"
+          spellcheck="false"
+          autocomplete="off"
+        />
+      </div>
+      <span class="units-label">坐标与长度：m</span>
+    </div>
+
+    <main class="workspace">
+      <aside class="grasp-panel">
+        <div class="panel-heading">
+          <h1>抓取方式 <span id="grasp-count" class="counter">00</span></h1>
+          <button
+            id="add-grasp"
+            class="icon-button add-button"
+            aria-label="新增抓取方式"
+            title="新增抓取方式"
+          >
+            ＋
+          </button>
+        </div>
+        <div class="panel-description">按优先级升序执行</div>
+        <div id="grasp-list" class="grasp-list" aria-label="抓取方式列表"></div>
+        <div id="list-empty" class="list-empty">
+          <span aria-hidden="true">◎</span>
+          <p>从一个接触区域开始</p>
+          <small>在模型表面点击，或新增抓取方式。</small
+          ><button id="empty-add" class="button secondary">
+            ＋ 新增抓取方式
+          </button>
+        </div>
+        <div class="list-actions">
+          <button id="duplicate-grasp" class="button compact" disabled>
+            复制</button
+          ><button
+            id="delete-grasp"
+            class="button compact danger-text"
+            disabled
+          >
+            删除
+          </button>
+        </div>
+        <div class="workflow-note">
+          <span class="eyebrow">ANNOTATION WORKFLOW</span>
+          <p>① 拾取接触面<br />② 确认朝外法向<br />③ 添加候选点并导出</p>
+          <small>标注与实例位姿解耦，可按物体模板复用。</small>
+        </div>
+      </aside>
+
+      <section class="viewport-panel" aria-label="三维标注工作区">
+        <div class="viewport-top">
+          <span class="eyebrow"
+            >OBJECT SPACE <span class="slash">/</span>
+            <span id="view-object">eu_plug</span></span
+          >
+          <div>
+            <button id="wireframe" class="view-button" aria-pressed="false">
+              线框</button
+            ><button id="fit-view" class="view-button" title="重置相机取景">
+              重置视图
+            </button>
+          </div>
+        </div>
+        <div id="viewer" class="viewer"></div>
+        <div class="mode-toolbar" role="group" aria-label="拾取模式">
+          <button data-mode="center" class="mode-button active">
+            ◎ 放置圆盘</button
+          ><button data-mode="candidate" class="mode-button">
+            ● 添加候选点</button
+          ><button data-mode="inspect" class="mode-button">⌖ 查看坐标</button>
+        </div>
+        <div id="loading" class="loading">正在加载本地模型…</div>
+        <div class="axis-legend">
+          <span class="x">X</span><span class="y">Y</span
+          ><span class="z">Z</span><span>物体坐标系</span>
+        </div>
+        <div class="viewport-bottom">
+          <div class="marker-legend">
+            <span class="legend-center">接触圆盘</span
+            ><span class="legend-normal">朝外法向</span
+            ><span class="legend-tangent">切向</span
+            ><span class="legend-candidate">候选点</span>
+          </div>
+          <p>左键旋转 · 滚轮缩放 · 右键平移 · 拖动圆心 / 橙色箭头端点</p>
+        </div>
+        <div id="pick-readout" class="pick-readout">
+          <span class="eyebrow">SURFACE PICK</span
+          ><span id="pick-position">点击模型表面查看物体坐标</span
+          ><span id="pick-normal">法向需人工确认朝外</span>
+        </div>
+      </section>
+
+      <aside class="editor-panel">
+        <div class="panel-heading">
+          <h2>区域属性</h2>
+          <span class="eyebrow">DISK</span>
+        </div>
+        <div id="editor-empty" class="editor-empty">
+          <span aria-hidden="true">↖</span>
+          <p>选择或创建抓取方式</p>
+          <small>接触圆心是执行锚点，圆盘半径用于容差与在线校验。</small>
+        </div>
+        <form id="editor" hidden autocomplete="off" onsubmit="return false">
+          <section class="editor-section">
+            <label class="field-label" for="grasp-id">抓取 ID</label
+            ><input id="grasp-id" spellcheck="false" />
+            <div class="two-columns">
+              <label class="field-label"
+                >优先级<input
+                  id="priority"
+                  type="number"
+                  min="1"
+                  step="1" /></label
+              ><label class="field-label"
+                >验证状态<select id="status">
+                  <option value="pending">待验证</option>
+                  <option value="verified">已验证</option>
+                  <option value="deprecated">已弃用</option>
+                </select></label
+              >
+            </div>
+          </section>
+          <section class="editor-section">
+            <div class="section-label">
+              <h3>接触区域</h3>
+              <span class="field-code">center_obj</span>
+            </div>
+            <div class="vector-axis">
+              <span>X</span><span>Y</span><span>Z</span>
+            </div>
+            <div class="vector-inputs">
+              <input
+                type="number"
+                step="any"
+                data-vector="center_obj"
+                data-axis="0"
+                aria-label="圆心 X"
+              /><input
+                type="number"
+                step="any"
+                data-vector="center_obj"
+                data-axis="1"
+                aria-label="圆心 Y"
+              /><input
+                type="number"
+                step="any"
+                data-vector="center_obj"
+                data-axis="2"
+                aria-label="圆心 Z"
+              />
+            </div>
+            <div class="radius-label">
+              <label class="field-label" for="radius"
+                >接触半径 <span class="muted">m</span></label
+              ><span id="radius-mm"></span>
+            </div>
+            <input id="radius" type="number" min="0.000001" step="0.001" />
+            <p class="field-hint">圆心用于执行；半径用于接触容差校验。</p>
+          </section>
+          <section class="editor-section">
+            <div class="section-label">
+              <h3><i class="color-dot normal-color"></i>朝外法向</h3>
+              <span id="normal-source" class="source-badge">邻域拟合</span>
+            </div>
+            <div class="vector-inputs">
+              <input
+                type="number"
+                step="any"
+                data-vector="normal_obj"
+                data-axis="0"
+                aria-label="法向 X"
+              /><input
+                type="number"
+                step="any"
+                data-vector="normal_obj"
+                data-axis="1"
+                aria-label="法向 Y"
+              /><input
+                type="number"
+                step="any"
+                data-vector="normal_obj"
+                data-axis="2"
+                aria-label="法向 Z"
+              />
+            </div>
+            <p id="normal-norm" class="field-hint"></p>
+            <div class="inline-actions">
+              <button id="normal-flip" type="button" class="text-button">
+                翻转方向</button
+              ><button id="normal-fit" type="button" class="text-button">
+                重新拟合</button
+              ><button
+                id="normal-clear"
+                type="button"
+                class="text-button muted"
+              >
+                清空手输
+              </button>
+            </div>
+          </section>
+          <section class="editor-section">
+            <div class="section-label">
+              <h3><i class="color-dot tangent-color"></i>切向参考</h3>
+              <button id="tangent-auto" type="button" class="text-button">
+                自动正交
+              </button>
+            </div>
+            <div class="vector-inputs">
+              <input
+                type="number"
+                step="any"
+                data-vector="tangent_ref_obj"
+                data-axis="0"
+                aria-label="切向 X"
+              /><input
+                type="number"
+                step="any"
+                data-vector="tangent_ref_obj"
+                data-axis="1"
+                aria-label="切向 Y"
+              /><input
+                type="number"
+                step="any"
+                data-vector="tangent_ref_obj"
+                data-axis="2"
+                aria-label="切向 Z"
+              />
+            </div>
+            <p id="tangent-hint" class="field-hint"></p>
+            <button id="vectors-normalize" type="button" class="text-button">
+              归一化法向与切向
+            </button>
+          </section>
+          <section class="editor-section">
+            <div class="section-label">
+              <h3>
+                <i class="color-dot candidate-color"></i>候选点
+                <span id="candidate-count" class="counter">0</span>
+              </h3>
+              <button id="candidate-pick" type="button" class="text-button">
+                ＋ 表面拾取
+              </button>
+            </div>
+            <div id="candidate-list"></div>
+            <button
+              id="candidate-center"
+              type="button"
+              class="text-button muted"
+            >
+              ＋ 将圆心加入候选点
+            </button>
+          </section>
+          <section class="editor-section">
+            <label class="field-label" for="notes">实吸记录 / 备注</label
+            ><textarea
+              id="notes"
+              rows="3"
+              placeholder="记录密封效果、失败原因或实吸结论…"
+            ></textarea>
+          </section>
+        </form>
+      </aside>
+    </main>
+    <footer class="app-footer">
+      <span
+        ><span class="connection-dot"></span> normal_convention:
+        outward_surface</span
+      ><span>OBJ 原始坐标 · 不平移 / 不旋转 / 不缩放</span
+      ><a href="./docs/downstream_interface.md" target="_blank" rel="noopener"
+        >下游接口 ↗</a
+      >
+    </footer>
+    <div id="toast" role="status" hidden></div>
+    <dialog id="error-dialog">
+      <div class="dialog-heading">
+        <h2>操作未完成</h2>
+        <button id="close-error" class="icon-button" aria-label="关闭错误提示">
+          ×
+        </button>
+      </div>
+      <p id="error-context"></p>
+      <pre id="error-details"></pre>
+      <button id="ack-error" class="button primary">返回编辑</button>
+    </dialog>
+    <input id="obj-file" type="file" accept=".obj" hidden /><input
+      id="json-file"
+      type="file"
+      accept=".json,application/json"
+      hidden
+    />
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
